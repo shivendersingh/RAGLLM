@@ -3,6 +3,7 @@ import sys
 import argparse
 from dotenv import load_dotenv
 from app.rag_system import RAGSystem
+import chromadb  # Add ChromaDB for collection management
 
 def main():
     # Load environment variables from .env file
@@ -17,6 +18,11 @@ def main():
     parser.add_argument("--info", action="store_true", help="Show system information")
     parser.add_argument("--storage-pdf-dir", type=str, default="data/pdfs", help="Directory for PDF storage")
     parser.add_argument("--vector-db", type=str, default="data/vector_db", help="Directory for vector database")
+    
+    # Collection management parameters
+    parser.add_argument("--collection", type=str, help="Specific collection to query (defaults to 'master' which contains web uploads)")
+    parser.add_argument("--list-collections", action="store_true", help="List all available collections")
+    parser.add_argument("--use-latest-web", action="store_true", help="Use the latest web session collection")
     
     # DeepSeek LLM parameters with environment variable defaults
     parser.add_argument("--deepseek-api-key", type=str, 
@@ -47,24 +53,103 @@ def main():
         max_tokens=args.max_tokens
     )
     
+    # List collections if requested
+    if args.list_collections:
+        try:
+            client = chromadb.PersistentClient(path=args.vector_db)
+            collections = client.list_collections()
+            
+            print("\n" + "="*60)
+            print("AVAILABLE COLLECTIONS")
+            print("="*60)
+            if collections:
+                for i, collection in enumerate(collections):
+                    # Try to get document count
+                    try:
+                        coll = client.get_collection(collection.name)
+                        count = coll.count()
+                    except:
+                        count = "unknown"
+                    
+                    print(f"{i+1:2d}. {collection.name} ({count} documents)")
+                    
+                    # If this is a web session, indicate it
+                    if collection.name.startswith("user_"):
+                        print(f"     (Web session collection)")
+            else:
+                print("No collections found")
+            print("="*60)
+            return 0
+        except Exception as e:
+            print(f"Error listing collections: {str(e)}")
+            return 1
+            
+    # Determine which collection to use
+    # Use master collection by default to access web uploads
+    collection_name = "master"
+    if args.collection:
+        collection_name = args.collection
+        print(f"Using specified collection: {collection_name}")
+    elif args.use_latest_web:
+        try:
+            # Find the latest web session collection
+            client = chromadb.PersistentClient(path=args.vector_db)
+            collections = client.list_collections()
+            web_collections = [c.name for c in collections if c.name.startswith("user_")]
+            
+            if web_collections:
+                # Sort by name to get the most recent (this is a heuristic)
+                collection_name = sorted(web_collections)[-1]
+                print(f"Using latest web collection: {collection_name}")
+            else:
+                print("No web collections found, using master collection")
+                collection_name = "master"
+        except Exception as e:
+            print(f"Error finding latest web collection: {str(e)}")
+            collection_name = "master"
+    
     # Show system info if requested
     if args.info:
         info = rag_system.get_system_info()
-        print("\n=== RAG System Information ===")
-        for key, value in info.items():
-            print(f"{key}: {value}")
-        print("=" * 30)
+        print("\n" + "="*60)
+        print("RAG SYSTEM INFORMATION")
+        print("="*60)
+        print(f"PDF Directory: {info['pdf_directory']}")
+        print(f"PDF Files Count: {info['pdf_files_count']}")
+        print(f"Vector DB Directory: {info['vector_db_directory']}")
+        print(f"Document Types Supported: {', '.join(info['document_types_supported'])}")
+        
+        # Show collections with details
+        print(f"\nCollections:")
+        if 'collections' in info and info['collections']:
+            for name, count in info['collections'].items():
+                collection_type = "(Web session)" if name.startswith("user_") else "(Default/CLI)"
+                print(f"  - {name}: {count} documents {collection_type}")
+        else:
+            print("  No collections information available")
+        
+        # Show LLM info
+        if 'llm_service' in info and info['llm_service']:
+            print(f"\nLLM Service:")
+            llm = info['llm_service']
+            print(f"  Type: {llm.get('service_type', 'Unknown')}")
+            print(f"  Model: {llm.get('model_name', 'Unknown')}")
+            if 'temperature' in llm:
+                print(f"  Temperature: {llm.get('temperature')}")
+            if 'max_tokens' in llm:
+                print(f"  Max Tokens: {llm.get('max_tokens')}")
+        
+        print(f"\nCurrent Collection: {collection_name}")
+        print("="*60)
     
     # Process single PDF if provided
     if args.pdf:
-        print(f"Processing PDF: {args.pdf}")
-        if args.doc_type != "auto":
-            success = rag_system.process_pdf_with_type(args.pdf, doc_type=args.doc_type)
-        else:
-            success = rag_system.process_pdf(args.pdf)
+        print(f"Processing PDF: {args.pdf} into collection: {collection_name}")
+        # Use collection-aware processing
+        success = rag_system.process_pdf_replace_collection(args.pdf, collection_name)
         
         if success:
-            print(f"✓ Successfully processed {args.pdf}")
+            print(f"✓ Successfully processed {args.pdf} into collection '{collection_name}'")
         else:
             print(f"✗ Failed to process {args.pdf}")
             return 1
@@ -83,12 +168,15 @@ def main():
     # Handle query if provided
     if args.query:
         print(f"Querying system with: {args.query}")
-        result = rag_system.query(args.query)
+        print(f"Using collection: {collection_name}")
+        # Use collection-aware querying
+        result = rag_system.query_collection(args.query, collection_name)
         
         print("\n" + "="*50)
         print("QUERY RESULT")
         print("="*50)
         print(f"Query: {result['query']}")
+        print(f"Collection: {collection_name}")
         print(f"\nResponse: {result['response']}")
         
         if result['source_documents']:
@@ -100,21 +188,37 @@ def main():
                     # Show relevant metadata
                     metadata_items = []
                     for key, value in doc.metadata.items():
-                        if key in ['title', 'section', 'type', 'slide', 'field_name']:
+                        if key in ['title', 'section', 'type', 'slide', 'field_name', 'source_file']:
                             metadata_items.append(f"{key}: {value}")
                     if metadata_items:
                         print(f"Metadata: {', '.join(metadata_items)}")
+        else:
+            print(f"\n⚠️  No source documents found in collection '{collection_name}'")
+            print("💡 Try using --list-collections to see available collections")
+            print("💡 Or use --use-latest-web to query the latest web session")
         print("="*50)
     
     # If no arguments provided, show help
-    if not any([args.pdf, args.pdf_dir, args.query, args.info]):
+    if not any([args.pdf, args.pdf_dir, args.query, args.info, args.list_collections]):
         parser.print_help()
-        print("\nExample usage:")
+        print("\n" + "="*60)
+        print("EXAMPLE USAGE")
+        print("="*60)
+        print("Basic Operations:")
         print("  python main.py --pdf document.pdf --doc-type academic")
         print("  python main.py --pdf-dir /path/to/pdfs")
         print("  python main.py --query 'What is this document about?'")
         print("  python main.py --info")
-        print("  python main.py --pdf doc.pdf --query 'summarize this'")
+        
+        print("\nCollection Management:")
+        print("  python main.py --list-collections")
+        print("  python main.py --use-latest-web --query 'What is this about?'")
+        print("  python main.py --collection user_abc123 --query 'Summarize this'")
+        
+        print("\nCombined Operations:")
+        print("  python main.py --pdf doc.pdf --collection my_docs --query 'summarize'")
+        print("  python main.py --deepseek-api-key sk-xxx --use-latest-web --query 'analyze'")
+        print("="*60)
         return 0
     
     return 0

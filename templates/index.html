@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 sidebar">
+                <div class="sidebar-header">
+                    <h3>RAG Chatbot</h3>
+                    <p class="text-muted">Powered by DeepSeek</p>
+                </div>
+                
+                <!-- PDF Upload Section -->
+                <div class="upload-section">
+                    <h5>Upload PDF</h5>
+                    <form id="pdf-upload-form" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="pdf-file" class="form-label visually-hidden">Choose PDF</label>
+                            <input class="form-control" type="file" id="pdf-file" accept=".pdf">
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-upload me-2"></i>Upload & Process
+                        </button>
+                    </form>
+                    <div id="upload-status" class="mt-2"></div>
+                </div>
+                
+                <!-- Uploaded PDFs List -->
+                <div class="uploaded-pdfs mt-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5>Current Document</h5>
+                        <button id="clear-docs-btn" class="btn btn-outline-danger btn-sm" onclick="clearAllPdfs()" {% if not uploaded_pdfs %}style="display:none"{% endif %}>
+                            <i class="fas fa-trash me-1"></i>Clear
+                        </button>
+                    </div>
+                    <ul class="list-group" id="pdf-list">
+                        {% for pdf in uploaded_pdfs %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-file-pdf text-danger me-2"></i>{{ pdf }}</span>
+                                <small class="text-muted">Current document</small>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    <div class="text-center mt-2" id="no-pdfs-message" {% if uploaded_pdfs %}style="display:none"{% endif %}>
+                        <p class="text-muted">No document uploaded yet<br><small>Upload a PDF to replace any previous document</small></p>
+                    </div>
+                </div>
+                
+                <!-- System Info -->
+                <div class="system-info mt-4">
+                    <h5>System Info</h5>
+                    <button id="show-system-info" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-info-circle me-2"></i>Show Details
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Chat Area -->
+            <div class="col-md-9 chat-area">
+                <div class="chat-container">
+                    <div id="chat-messages">
+                        <div class="message system-message">
+                            <div class="message-content">
+                                <p>Hello! I'm your RAG assistant powered by DeepSeek. Upload a PDF document and ask me questions about it.</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <form id="chat-form">
+                            <div class="input-group">
+                                <input type="text" id="user-input" class="form-control" placeholder="Ask a question about your documents...">
+                                <button class="btn btn-primary" type="submit">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- System Info Modal -->
+    <div class="modal fade" id="systemInfoModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">System Information</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="system-info-content">
+                    <div class="d-flex justify-content-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
