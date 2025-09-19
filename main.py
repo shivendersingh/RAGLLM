@@ -1,10 +1,14 @@
 import os
 import sys
 import argparse
+from dotenv import load_dotenv
 from app.rag_system import RAGSystem
 
 def main():
-    parser = argparse.ArgumentParser(description="Enhanced RAG System CLI")
+    # Load environment variables from .env file
+    load_dotenv()
+    
+    parser = argparse.ArgumentParser(description="Enhanced RAG System CLI with DeepSeek Integration")
     parser.add_argument("--pdf", type=str, help="Path to PDF file to process")
     parser.add_argument("--pdf-dir", type=str, help="Directory containing PDF files to process")
     parser.add_argument("--query", type=str, help="Query to ask the system")
@@ -14,12 +18,33 @@ def main():
     parser.add_argument("--storage-pdf-dir", type=str, default="data/pdfs", help="Directory for PDF storage")
     parser.add_argument("--vector-db", type=str, default="data/vector_db", help="Directory for vector database")
     
+    # DeepSeek LLM parameters with environment variable defaults
+    parser.add_argument("--deepseek-api-key", type=str, 
+                       default=os.environ.get("DEEPSEEK_API_KEY"), 
+                       help="DeepSeek API key (or set DEEPSEEK_API_KEY env var)")
+    parser.add_argument("--deepseek-model", type=str, 
+                       default=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"), 
+                       help="DeepSeek model name (default: deepseek-chat)")
+    parser.add_argument("--temperature", type=float, 
+                       default=float(os.environ.get("DEEPSEEK_TEMPERATURE", 0.7)), 
+                       help="Temperature for DeepSeek model (0.0-1.0, default: 0.7)")
+    parser.add_argument("--max-tokens", type=int, 
+                       default=int(os.environ.get("DEEPSEEK_MAX_TOKENS", 1024)), 
+                       help="Maximum tokens for DeepSeek response (default: 1024)")
+    
     args = parser.parse_args()
     
-    # Initialize RAG system with custom directories if provided
+    # Get DeepSeek API key from argument or environment variable
+    deepseek_api_key = args.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY")
+    
+    # Initialize RAG system with custom directories and DeepSeek configuration
     rag_system = RAGSystem(
         pdf_dir=args.storage_pdf_dir,
-        vector_db_dir=args.vector_db
+        vector_db_dir=args.vector_db,
+        deepseek_api_key=deepseek_api_key,
+        deepseek_model=args.deepseek_model,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens
     )
     
     # Show system info if requested

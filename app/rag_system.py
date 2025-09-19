@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 import shutil
 from .enhanced_pdf_processor import EnhancedPDFProcessor
 from .vector_store import VectorStore
-from .llm_service import LLMService
+from .llm_service import LLMService, create_llm_service
 
 class RAGSystem:
     def __init__(
@@ -11,9 +11,24 @@ class RAGSystem:
         pdf_dir: str = "data/pdfs", 
         vector_db_dir: str = "data/vector_db",
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        llm_model: str = "google/flan-t5-small"
+        llm_model: str = "google/flan-t5-small",
+        deepseek_api_key: Optional[str] = None,
+        deepseek_model: str = "deepseek-chat",
+        temperature: float = 0.7,
+        max_tokens: int = 1024
     ):
-        """Initialize the RAG system with all components."""
+        """Initialize the RAG system with all components.
+        
+        Args:
+            pdf_dir: Directory for PDF storage
+            vector_db_dir: Directory for vector database
+            embedding_model: Model for generating embeddings
+            llm_model: Local LLM model (used if no DeepSeek API key)
+            deepseek_api_key: DeepSeek API key (optional)
+            deepseek_model: DeepSeek model name
+            temperature: Temperature for DeepSeek model
+            max_tokens: Maximum tokens for DeepSeek model
+        """
         self.pdf_dir = pdf_dir
         self.vector_db_dir = vector_db_dir
         
@@ -27,7 +42,15 @@ class RAGSystem:
             persist_directory=vector_db_dir,
             embedding_model=embedding_model
         )
-        self.llm_service = LLMService(model_id=llm_model)
+        
+        # Initialize LLM service (DeepSeek or local)
+        self.llm_service = create_llm_service(
+            deepseek_api_key=deepseek_api_key,
+            deepseek_model=deepseek_model,
+            local_model=llm_model,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
     
     def process_pdf(self, file_path: str) -> bool:
         """Process a PDF file and add it to the vector store."""
@@ -207,11 +230,27 @@ class RAGSystem:
         except:
             pdf_count = 0
         
+        # Get LLM service information
+        llm_info = {
+            "service_type": getattr(self.llm_service, 'service_type', 'unknown'),
+        }
+        
+        if hasattr(self.llm_service, 'model_name'):
+            llm_info["model_name"] = self.llm_service.model_name
+        elif hasattr(self.llm_service, 'model'):
+            llm_info["model_name"] = getattr(self.llm_service.model, 'model', 'local_transformer')
+        
+        if hasattr(self.llm_service, 'temperature'):
+            llm_info["temperature"] = self.llm_service.temperature
+        if hasattr(self.llm_service, 'max_tokens'):
+            llm_info["max_tokens"] = self.llm_service.max_tokens
+        
         return {
             "pdf_directory": self.pdf_dir,
             "vector_db_directory": self.vector_db_dir,
             "pdf_files_count": pdf_count,
             "chunk_size": getattr(self.pdf_processor, 'chunk_size', 600),
             "chunk_overlap": getattr(self.pdf_processor, 'chunk_overlap', 100),
-            "document_types_supported": list(self.pdf_processor.DOCUMENT_TYPES.keys())
+            "document_types_supported": list(self.pdf_processor.DOCUMENT_TYPES.keys()),
+            "llm_service": llm_info
         }
